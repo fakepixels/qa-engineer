@@ -48,13 +48,36 @@ async function checkLinks(baseUrl) {
     try {
       console.log(`Checking: ${currentUrl}`);
       
-      // Navigate to the current URL
-      const response = await page.goto(currentUrl, { waitUntil: 'networkidle0' });
+      // Navigate to the current URL and follow redirects
+      const response = await page.goto(currentUrl, { 
+        waitUntil: 'networkidle0',
+        followRedirect: true 
+      });
+      
       const status = response.status();
       
-      if (status !== 200) {
-        const errorMsg = `Returned status ${status}`;
-        console.error(`Error: ${currentUrl} ${errorMsg}`);
+      // Check if status code indicates an error
+      // 2xx are success codes
+      // 3xx are redirect codes (which Puppeteer follows automatically)
+      if (status < 200 || status >= 400) {
+        let errorMsg;
+        if (status === 404) {
+          errorMsg = 'Page not found (404)';
+        } else if (status === 403) {
+          errorMsg = 'Access forbidden (403)';
+        } else if (status === 500) {
+          errorMsg = 'Server error (500)';
+        } else if (status === 502) {
+          errorMsg = 'Bad gateway (502)';
+        } else if (status === 503) {
+          errorMsg = 'Service unavailable (503)';
+        } else if (status === 504) {
+          errorMsg = 'Gateway timeout (504)';
+        } else {
+          errorMsg = `Returned status ${status}`;
+        }
+        
+        console.error(`Error: ${currentUrl} - ${errorMsg}`);
         brokenLinks.push({ url: currentUrl, error: errorMsg });
         continue;
       }
@@ -80,8 +103,23 @@ async function checkLinks(baseUrl) {
         }
       }
     } catch (error) {
-      console.error(`Failed to load ${currentUrl}: ${error.message}`);
-      brokenLinks.push({ url: currentUrl, error: error.message });
+      let errorMsg;
+      if (error.name === 'TimeoutError') {
+        errorMsg = 'Page load timed out';
+      } else if (error.name === 'NetworkError') {
+        errorMsg = 'Network connection failed';
+      } else if (error.message.includes('ERR_NAME_NOT_RESOLVED')) {
+        errorMsg = 'DNS lookup failed';
+      } else if (error.message.includes('ERR_CONNECTION_REFUSED')) {
+        errorMsg = 'Connection refused';
+      } else if (error.message.includes('ERR_SSL_PROTOCOL_ERROR')) {
+        errorMsg = 'SSL/TLS error';
+      } else {
+        errorMsg = error.message;
+      }
+      
+      console.error(`Failed to load ${currentUrl}: ${errorMsg}`);
+      brokenLinks.push({ url: currentUrl, error: errorMsg });
     }
   }
 
