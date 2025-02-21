@@ -27,10 +27,13 @@ npm install -g .
 ## Usage
 
 ```bash
-qa-engineer https://mywebsite.test
+qa-engineer https://mywebsite.test [--external|-e]
 ```
 
 Replace `https://mywebsite.test` with the website URL you want to check.
+
+Options:
+- `--external` or `-e`: Enable checking of external links (links to other domains)
 
 ### Example Output
 
@@ -43,7 +46,9 @@ Checking: https://mywebsite.test/contact
 
 Scan completed!
 Total URLs checked: 25
-Broken links found: 2
+Broken links found: 3
+  Internal broken links: 1
+  External broken links: 2
 
 CSV report generated: broken-links.csv
 Markdown report generated: broken-links.md
@@ -55,21 +60,21 @@ The tool generates two types of reports:
 
 1. **CSV Report** (broken-links.csv):
    ```csv
-   URL,Error
-   "https://mywebsite.test/missing-page","Page not found (404)"
-   "https://mywebsite.test/restricted","Access forbidden (403)"
-   "https://mywebsite.test/server-error","Server error (500)"
+   URL,Domain Type,Error
+   "https://mywebsite.test/missing-page","Internal","Page not found (404)"
+   "https://external-site.test/broken","External","Connection refused"
+   "https://another-site.test/error","External","Server error (500)"
    ```
 
 2. **Markdown Report** (broken-links.md):
    ```markdown
    # Broken Links Report
 
-   | URL | Error |
-   | --- | ----- |
-   | https://mywebsite.test/missing-page | Page not found (404) |
-   | https://mywebsite.test/restricted | Access forbidden (403) |
-   | https://mywebsite.test/server-error | Server error (500) |
+   | URL | Domain Type | Error |
+   | --- | ----------- | ----- |
+   | https://mywebsite.test/missing-page | Internal | Page not found (404) |
+   | https://external-site.test/broken | External | Connection refused |
+   | https://another-site.test/error | External | Server error (500) |
    ```
 
 ## How It Works
@@ -91,6 +96,9 @@ The tool generates two types of reports:
   - HTTP status codes (404, 403, 500, etc.)
   - Network issues (timeouts, DNS failures, SSL errors)
   - Access restrictions
+- Domain-aware link checking:
+  - Internal links (same domain as base URL)
+  - External links (different domains, optional)
 - Configurable 30-second timeout per page
 - Memory-efficient using a queue-based crawler
 

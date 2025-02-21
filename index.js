@@ -6,10 +6,10 @@ const path = require('node:path');
 
 // Function to write CSV report
 function writeCSVReport(brokenLinks) {
-  let csvContent = 'URL,Error\n';
+  let csvContent = 'URL,Domain Type,Error\n';
   for (const item of brokenLinks) {
     // Escape potential commas in URL or error by wrapping in quotes
-    csvContent += `"${item.url}","${item.error}"\n`;
+    csvContent += `"${item.url}","${item.type}","${item.error}"\n`;
   }
   fs.writeFileSync(path.join(process.cwd(), 'broken-links.csv'), csvContent);
   console.log('CSV report generated: broken-links.csv');
@@ -18,21 +18,25 @@ function writeCSVReport(brokenLinks) {
 // Function to write Markdown report
 function writeMarkdownReport(brokenLinks) {
   let mdContent = '# Broken Links Report\n\n';
-  mdContent += '| URL | Error |\n';
-  mdContent += '| --- | ----- |\n';
+  mdContent += '| URL | Domain Type | Error |\n';
+  mdContent += '| --- | ----------- | ----- |\n';
   for (const item of brokenLinks) {
-    mdContent += `| ${item.url} | ${item.error} |\n`;
+    mdContent += `| ${item.url} | ${item.type} | ${item.error} |\n`;
   }
   fs.writeFileSync(path.join(process.cwd(), 'broken-links.md'), mdContent);
   console.log('Markdown report generated: broken-links.md');
 }
 
-async function checkLinks(baseUrl) {
+async function checkLinks(baseUrl, checkExternal = false) {
   const visited = new Set();
   const queue = [baseUrl];
   const brokenLinks = [];
+  const baseUrlObj = new URL(baseUrl);
   
   console.log(`Starting link check from: ${baseUrl}`);
+  if (checkExternal) {
+    console.log('External link checking enabled');
+  }
   
   const browser = await puppeteer.launch();
   const page = await browser.newPage();
@@ -77,8 +81,10 @@ async function checkLinks(baseUrl) {
           errorMsg = `Returned status ${status}`;
         }
         
-        console.error(`Error: ${currentUrl} - ${errorMsg}`);
-        brokenLinks.push({ url: currentUrl, error: errorMsg });
+        const currentUrlObj = new URL(currentUrl);
+        const type = currentUrlObj.hostname === baseUrlObj.hostname ? 'Internal' : 'External';
+        console.error(`Error: ${currentUrl} - ${errorMsg} (${type})`);
+        brokenLinks.push({ url: currentUrl, type, error: errorMsg });
         continue;
       }
 
@@ -88,14 +94,16 @@ async function checkLinks(baseUrl) {
         return Array.from(anchors, a => a.href).filter(href => !!href);
       });
 
-      // Queue internal links for further checking
+      // Process discovered links
       for (const link of links) {
         try {
           const url = new URL(link);
-          const baseUrlObj = new URL(baseUrl);
+          const isInternal = url.hostname === baseUrlObj.hostname;
           
-          // Only check links from the same domain
-          if (url.hostname === baseUrlObj.hostname && !visited.has(link)) {
+          // Add to queue if:
+          // 1. It's an internal link, or
+          // 2. External checking is enabled and we haven't visited this external link
+          if (!visited.has(link) && (isInternal || checkExternal)) {
             queue.push(link);
           }
         } catch (e) {
@@ -118,8 +126,10 @@ async function checkLinks(baseUrl) {
         errorMsg = error.message;
       }
       
-      console.error(`Failed to load ${currentUrl}: ${errorMsg}`);
-      brokenLinks.push({ url: currentUrl, error: errorMsg });
+      const currentUrlObj = new URL(currentUrl);
+      const type = currentUrlObj.hostname === baseUrlObj.hostname ? 'Internal' : 'External';
+      console.error(`Failed to load ${currentUrl}: ${errorMsg} (${type})`);
+      brokenLinks.push({ url: currentUrl, type, error: errorMsg });
     }
   }
 
@@ -131,6 +141,10 @@ async function checkLinks(baseUrl) {
   console.log(`Broken links found: ${brokenLinks.length}`);
 
   if (brokenLinks.length > 0) {
+    const internal = brokenLinks.filter(link => link.type === 'Internal').length;
+    const external = brokenLinks.filter(link => link.type === 'External').length;
+    console.log(`  Internal broken links: ${internal}`);
+    console.log(`  External broken links: ${external}`);
     writeCSVReport(brokenLinks);
     writeMarkdownReport(brokenLinks);
   } else {
@@ -138,12 +152,25 @@ async function checkLinks(baseUrl) {
   }
 }
 
-// Get the URL from CLI arguments
-const startUrl = process.argv[2];
+// Parse command line arguments
+const args = process.argv.slice(2);
+let startUrl;
+let checkExternal = false;
+
+// Process arguments
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '--external' || args[i] === '-e') {
+    checkExternal = true;
+  } else if (!startUrl) {
+    startUrl = args[i];
+  }
+}
 
 if (!startUrl) {
   console.error('Please provide a starting URL.');
-  console.error('Usage: node index.js <url>');
+  console.error('Usage: node index.js <url> [--external|-e]');
+  console.error('Options:');
+  console.error('  --external, -e    Check external links as well as internal ones');
   process.exit(1);
 }
 
@@ -156,7 +183,7 @@ try {
 }
 
 // Start the link checking process
-checkLinks(startUrl).catch(error => {
+checkLinks(startUrl, checkExternal).catch(error => {
   console.error('An error occurred:', error);
   process.exit(1);
 });
